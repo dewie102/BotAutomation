@@ -20,7 +20,7 @@
             </div>
             <div class="form-group">
                 <label asp-for="Message" class="control-label"></label>
-                @Html.TextAreaFor(model => model.Message, new { @class = "form-control" })
+                @Html.EditorFor(model => model.Message)
                 <span asp-validation-for="Message" class="text-danger"></span>
             </div>
             <div class="form-group">

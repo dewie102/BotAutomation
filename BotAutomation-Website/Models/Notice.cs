@@ -9,7 +9,8 @@ namespace BotAutomation_Website.Models
         [StringLength(63)]
         public string? Subject { get; set; }
 
-        [StringLength(512)]
+        [StringLength(512), UIHint("Message")]
+        //[DataType(DataType.MultilineText)]
         public string? Message { get; set; }
 
         [Display(Name = "Item Path")]
