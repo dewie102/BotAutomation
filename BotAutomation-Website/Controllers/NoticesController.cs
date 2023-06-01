@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Rendering;
 using Microsoft.EntityFrameworkCore;
 using BotAutomation_Website.Data;
-using BotAutomation_Website.Models;
+using AutomationUtilities.Models;
 
 namespace BotAutomation_Website.Controllers
 {

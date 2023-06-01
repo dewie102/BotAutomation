@@ -1,8 +1,10 @@
 ﻿using System.Data.SqlClient;
 
+using AutomationUtilities.Models;
+
 namespace BotAutomation
 {
-    internal class BotAutomationMain
+    public class BotAutomationMain
     {
         static void Main(string[] args)
         {
@@ -36,6 +38,11 @@ namespace BotAutomation
             catch(Exception ex)
             {
                 Console.WriteLine($"Can not open connection!\n{ex.Message}");
+            }
+
+            foreach(Notice notice in notices)
+            {
+                Console.WriteLine($"Notice: {notice.Id}\n\tSubject: {notice.Subject}\n\tMessage: {notice.Message}\n\tSent: {notice.Sent}");
             }
         }
     }

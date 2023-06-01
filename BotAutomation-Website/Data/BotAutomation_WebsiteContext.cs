@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
-using BotAutomation_Website.Models;
+using AutomationUtilities.Models;
 
 namespace BotAutomation_Website.Data
 {
@@ -14,6 +14,6 @@ namespace BotAutomation_Website.Data
         {
         }
 
-        public DbSet<BotAutomation_Website.Models.Notice> Notice { get; set; } = default!;
+        public DbSet<Notice> Notice { get; set; } = default!;
     }
 }

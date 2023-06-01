@@ -12,6 +12,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\AutomationUtilities\AutomationUtilities.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <None Update="config.yml">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
