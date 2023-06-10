@@ -8,6 +8,14 @@ namespace AutomationUtilities
 {
     public class MQTTClient
     {
+        public IMqttClient MqttClient { get; set; }
+
+        public MQTTClient()
+        {
+            MqttFactory mqttFactory = new();
+            MqttClient = mqttFactory.CreateMqttClient();
+        }
+
         static async Task Main(string[] args)
         {
             IConfigurationRoot config = new ConfigurationBuilder()
@@ -23,15 +31,14 @@ namespace AutomationUtilities
             if(config == null)
                 return;
 
-            MqttFactory mqttFactory = new();
-            IMqttClient mqttClient = mqttFactory.CreateMqttClient();
+            MQTTClient client = new();
 
             string? mqttServer = config["servers:mqtt"];
 
             if(mqttServer is null)
                 return;
 
-            await ConnectToMQTTServer(mqttClient, mqttServer);
+            await client.ConnectToMQTTServer(mqttServer);
 
             List<string>? topics = config.GetSection("mqttTopics").Get<List<string>>();
 
@@ -39,7 +46,7 @@ namespace AutomationUtilities
                 return;
 
             foreach(string topic in topics)
-                await SubscribeToTopic(mqttClient, topic);
+                await client.SubscribeToTopic(topic);
 
 
             Console.WriteLine("Hit 's' to send test message or any key to exit");
@@ -49,14 +56,14 @@ namespace AutomationUtilities
             {
                 foreach(string topic in topics)
                 {
-                    await PublishMessage(mqttClient, topic, "TestFromC#Client");
+                    await client.PublishMessage(topic, "TestFromC#Client");
                 }
             }
 
-            await mqttClient.DisconnectAsync();
+            await client.DisconnectFromMQTTServer();
         }
 
-        public static async Task ConnectToMQTTServer(IMqttClient mqttClient, string mqttServer)
+        public async Task ConnectToMQTTServer(string mqttServer)
         {
             MqttClientOptions mqttClientOptions = new MqttClientOptionsBuilder().WithTcpServer(mqttServer)
                 .WithTls(
@@ -68,15 +75,15 @@ namespace AutomationUtilities
 
             using(CancellationTokenSource timeout = new(5000))
             {
-                await mqttClient.ConnectAsync(mqttClientOptions, timeout.Token);
+                await MqttClient.ConnectAsync(mqttClientOptions, timeout.Token);
 
                 Console.WriteLine("The MQTT Client is connected");
             }
         }
 
-        public static async Task SubscribeToTopic(IMqttClient mqttClient, string topic)
+        public async Task SubscribeToTopic(string topic)
         {
-            mqttClient.ApplicationMessageReceivedAsync += e =>
+            MqttClient.ApplicationMessageReceivedAsync += e =>
             {
                 Console.WriteLine("Received application message.");
                 e.DumpToConsole();
@@ -85,20 +92,26 @@ namespace AutomationUtilities
                 return Task.CompletedTask;
             };
 
-            var response = await mqttClient.SubscribeAsync(topic);
+            var response = await MqttClient.SubscribeAsync(topic);
 
             response.DumpToConsole();
         }
 
-        public static async Task PublishMessage(IMqttClient mqttClient, string topic, string message)
+        public async Task PublishMessage(string topic, string message)
         {
             MqttApplicationMessage applicationMessage = new MqttApplicationMessageBuilder()
                 .WithTopic(topic)
                 .WithPayload(message)
                 .Build();
 
-            var response = await mqttClient.PublishAsync(applicationMessage);
+            var response = await MqttClient.PublishAsync(applicationMessage);
             response.DumpToConsole();
+        }
+
+        public async Task DisconnectFromMQTTServer()
+        {
+            Console.WriteLine("Disconnecting from server...");
+            await MqttClient.DisconnectAsync();
         }
     }
 }

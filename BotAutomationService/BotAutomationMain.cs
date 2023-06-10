@@ -1,18 +1,85 @@
 ﻿using System.Data.SqlClient;
 
 using AutomationUtilities.Models;
+using AutomationUtilities;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Configuration.Yaml;
 
 namespace BotAutomation
 {
     public class BotAutomationMain
     {
-        static void Main(string[] args)
+        static async Task Main(string[] args)
         {
-            List<Notice> notices = new();
+            MQTTClient mqttClient = new MQTTClient();
 
-            string connectionString = "Server=(localdb)\\mssqllocaldb;Database=BotAutomation_Website.Data;Trusted_Connection=True;MultipleActiveResultSets=true";
+            await InitializeServices(mqttClient);
+
+            await mqttClient.DisconnectFromMQTTServer();
+        }
+
+        public static async Task<bool> InitializeServices(MQTTClient mqttClient)
+        {
+            IConfigurationRoot? config = GetConfig();
+
+            if(config == null)
+                return false;
+
+            bool success = await Task.Run(() => ConfigureMQTT(config, mqttClient));
+
+            Console.WriteLine($"{success}");
+            
+            if(!success)
+                return false;
+
+
+
+            return true;
+        }
+
+        public static IConfigurationRoot? GetConfig()
+        {
+            // Make config from yml secondary to the secrets vault... someday
+
+            IConfigurationRoot config = new ConfigurationBuilder()
+                .SetBasePath(AppContext.BaseDirectory)
+                .AddYamlFile("config.yml")
+                .Build();
+
+            return config;
+        }
+
+        public static async Task<bool> ConfigureMQTT(IConfigurationRoot config, MQTTClient mqttClient)
+        {
+            string? mqttServer = config["servers:mqtt"];
+
+            if(mqttServer is null)
+                return false;
+
+            await mqttClient.ConnectToMQTTServer(mqttServer);
+
+            List<string>? topics = config.GetSection("mqttTopics").Get<List<string>>();
+
+            if(topics is null)
+                return false;
+
+            foreach(string topic in topics)
+                await mqttClient.SubscribeToTopic(topic);
+
+            return true;
+        }
+
+        public void GetNoticesToSendFromDB()
+        {
+            //string connectionString = "Server=(localdb)\\mssqllocaldb;Database=BotAutomation_Website.Data;Trusted_Connection=True;MultipleActiveResultSets=true";
+            string connectionString = "Server=localhost\\SQLEXPRESS01;Database=BotAutomation_Website.Data;Trusted_Connection=True;MultipleActiveResultSets=true";
             SqlDataReader dataReader;
-            string sql = "SELECT * FROM Notice WHERE Sent = 'False'";
+            string sql = @"
+                SELECT *
+                FROM [BotAutomation_Website.Data].dbo.Notice
+                WHERE Sent = 0 AND
+                ScheduledTime >= DATEADD(DAY, -1, GETDATE()) AND
+                DATETRUNC(MINUTE, ScheduledTime) <= DATETRUNC(MINUTE, GETDATE());";
             SqlCommand command;
             SqlConnection connection = new SqlConnection(connectionString);
             try
@@ -27,23 +94,25 @@ namespace BotAutomation
                     Notice notice = new((int)dataReader["id"], dataReader["subject"].ToString(), dataReader["Message"].ToString(), dataReader["itemPath"].ToString(),
                                         (DateTime)dataReader["ScheduledTime"], (bool)dataReader["Sent"], (DateTime)dataReader["LastUpdated"]);
 
-                    notices.Add(notice);
 
 
                 }
                 dataReader.Close();
                 command.Dispose();
-                connection.Close();
             }
             catch(Exception ex)
             {
                 Console.WriteLine($"Can not open connection!\n{ex.Message}");
             }
-
-            foreach(Notice notice in notices)
+            finally
             {
-                Console.WriteLine($"Notice: {notice.Id}\n\tSubject: {notice.Subject}\n\tMessage: {notice.Message}\n\tSent: {notice.Sent}");
+                connection.Close();
             }
+        }
+
+        public void SendNoticeToBot(string subject, string message, string itemPath)
+        {
+
         }
     }
 }
