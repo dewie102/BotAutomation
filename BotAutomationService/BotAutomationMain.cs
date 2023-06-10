@@ -1,4 +1,5 @@
 ﻿using System.Data.SqlClient;
+using Newtonsoft.Json;
 
 using AutomationUtilities.Models;
 using AutomationUtilities;
@@ -13,9 +14,11 @@ namespace BotAutomation
         {
             MQTTClient mqttClient = new MQTTClient();
 
-            await InitializeServices(mqttClient);
+            SendNoticeToBot("testSubject", "TestMessage", null);
 
-            await mqttClient.DisconnectFromMQTTServer();
+            //await InitializeServices(mqttClient);
+
+            //await mqttClient.DisconnectFromMQTTServer();
         }
 
         public static async Task<bool> InitializeServices(MQTTClient mqttClient)
@@ -69,10 +72,18 @@ namespace BotAutomation
             return true;
         }
 
-        public void GetNoticesToSendFromDB()
+        public static void GetNoticesToSendFromDB(IConfigurationRoot config)
         {
+            if(config is null)
+                return;
+
+            string? connectionString = config["servers:sql"];
+
+            if(connectionString is null)
+                return;
+
             //string connectionString = "Server=(localdb)\\mssqllocaldb;Database=BotAutomation_Website.Data;Trusted_Connection=True;MultipleActiveResultSets=true";
-            string connectionString = "Server=localhost\\SQLEXPRESS01;Database=BotAutomation_Website.Data;Trusted_Connection=True;MultipleActiveResultSets=true";
+            //string connectionString = "Server=localhost\\SQLEXPRESS01;Database=BotAutomation_Website.Data;Trusted_Connection=True;MultipleActiveResultSets=true";
             SqlDataReader dataReader;
             string sql = @"
                 SELECT *
@@ -91,11 +102,8 @@ namespace BotAutomation
                 dataReader = command.ExecuteReader();
                 while(dataReader.Read())
                 {
-                    Notice notice = new((int)dataReader["id"], dataReader["subject"].ToString(), dataReader["Message"].ToString(), dataReader["itemPath"].ToString(),
-                                        (DateTime)dataReader["ScheduledTime"], (bool)dataReader["Sent"], (DateTime)dataReader["LastUpdated"]);
-
-
-
+                    // I feel like I should be doing this part in the main function? Somehow returning all results back and deciding when to send...
+                    SendNoticeToBot(dataReader["subject"].ToString(), dataReader["Message"].ToString(), dataReader["itemPath"].ToString());
                 }
                 dataReader.Close();
                 command.Dispose();
@@ -110,8 +118,26 @@ namespace BotAutomation
             }
         }
 
-        public void SendNoticeToBot(string subject, string message, string itemPath)
+        public static void SendNoticeToBot(string? subject, string? message, string? itemPath)
         {
+            Dictionary<string, string> test = new()
+            {
+                { "command", "notice" },
+                { "group", "test" },
+                { "password", "testpw" },
+                { "action", "send" },
+            };
+
+            if(!string.IsNullOrEmpty(subject))
+                test.Add("subject", subject);
+            if(!string.IsNullOrEmpty(message))
+                test.Add("message", message);
+            if(!string.IsNullOrEmpty(itemPath))
+                test.Add("item", itemPath);
+
+            var json = JsonConvert.SerializeObject(test);
+            Console.WriteLine(json);
+
 
         }
     }
