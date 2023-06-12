@@ -5,39 +5,37 @@ using AutomationUtilities.Models;
 using AutomationUtilities;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Configuration.Yaml;
+using System.Text;
 
 namespace BotAutomation
 {
     public class BotAutomationMain
     {
+        static IConfigurationRoot? config;
+        static MQTTClient? mqttClient;
+
         static async Task Main(string[] args)
         {
-            MQTTClient mqttClient = new MQTTClient();
+            //SendNoticeToBot("testSubject", "TestMessage", null);
 
-            SendNoticeToBot("testSubject", "TestMessage", null);
+            await InitializeServices();
 
-            //await InitializeServices(mqttClient);
+            if(config == null || mqttClient == null)
+                return;
 
-            //await mqttClient.DisconnectFromMQTTServer();
+            await GetNoticesToSendFromDB();
+
+            await mqttClient.DisconnectFromMQTTServer();
         }
 
-        public static async Task<bool> InitializeServices(MQTTClient mqttClient)
+        public static async Task InitializeServices()
         {
-            IConfigurationRoot? config = GetConfig();
+            config = GetConfig();
 
             if(config == null)
-                return false;
+                return;
 
-            bool success = await Task.Run(() => ConfigureMQTT(config, mqttClient));
-
-            Console.WriteLine($"{success}");
-            
-            if(!success)
-                return false;
-
-
-
-            return true;
+            await ConfigureMQTT();
         }
 
         public static IConfigurationRoot? GetConfig()
@@ -52,12 +50,18 @@ namespace BotAutomation
             return config;
         }
 
-        public static async Task<bool> ConfigureMQTT(IConfigurationRoot config, MQTTClient mqttClient)
+        public static async Task<bool> ConfigureMQTT()
         {
+            if(config == null)
+                return false;
+
             string? mqttServer = config["servers:mqtt"];
 
             if(mqttServer is null)
                 return false;
+
+            if(mqttClient is null)
+                mqttClient = new();
 
             await mqttClient.ConnectToMQTTServer(mqttServer);
 
@@ -72,7 +76,7 @@ namespace BotAutomation
             return true;
         }
 
-        public static void GetNoticesToSendFromDB(IConfigurationRoot config)
+        public static async Task GetNoticesToSendFromDB()
         {
             if(config is null)
                 return;
@@ -81,6 +85,8 @@ namespace BotAutomation
 
             if(connectionString is null)
                 return;
+
+            Console.WriteLine($"Connection String: {connectionString}");
 
             //string connectionString = "Server=(localdb)\\mssqllocaldb;Database=BotAutomation_Website.Data;Trusted_Connection=True;MultipleActiveResultSets=true";
             //string connectionString = "Server=localhost\\SQLEXPRESS01;Database=BotAutomation_Website.Data;Trusted_Connection=True;MultipleActiveResultSets=true";
@@ -96,21 +102,22 @@ namespace BotAutomation
             try
             {
                 connection.Open();
-                Console.WriteLine("Connection Open!");
+                Console.WriteLine("Database Connection Open!");
 
                 command = new SqlCommand(sql, connection);
                 dataReader = command.ExecuteReader();
                 while(dataReader.Read())
                 {
                     // I feel like I should be doing this part in the main function? Somehow returning all results back and deciding when to send...
-                    SendNoticeToBot(dataReader["subject"].ToString(), dataReader["Message"].ToString(), dataReader["itemPath"].ToString());
+                    await SendNoticeToBot(dataReader["subject"].ToString(), dataReader["Message"].ToString(), dataReader["itemPath"].ToString());
+                    //await Task.Delay(5000);
                 }
                 dataReader.Close();
                 command.Dispose();
             }
             catch(Exception ex)
             {
-                Console.WriteLine($"Can not open connection!\n{ex.Message}");
+                Console.WriteLine($"Can not open database connection!\n{ex.Message}");
             }
             finally
             {
@@ -118,13 +125,22 @@ namespace BotAutomation
             }
         }
 
-        public static void SendNoticeToBot(string? subject, string? message, string? itemPath)
+        public static async Task SendNoticeToBot(string? subject, string? message, string? itemPath)
         {
+            if(config == null || mqttClient == null)
+                return;
+
+            string? group = config["mqttSettings:group"];
+            string? password = config["mqttSettings:password"];
+
+            if(group == null || password == null)
+                return;
+
             Dictionary<string, string> test = new()
             {
                 { "command", "notice" },
-                { "group", "test" },
-                { "password", "testpw" },
+                { "group",  group },
+                { "password",  password },
                 { "action", "send" },
             };
 
@@ -135,10 +151,25 @@ namespace BotAutomation
             if(!string.IsNullOrEmpty(itemPath))
                 test.Add("item", itemPath);
 
-            var json = JsonConvert.SerializeObject(test);
-            Console.WriteLine(json);
+            /*var json = JsonConvert.SerializeObject(test);
+            Console.WriteLine(json);*/
 
+            StringBuilder payload = new();
+            foreach(KeyValuePair<string, string> kp in test)
+            {
+                payload.Append($"{kp.Key}={kp.Value}&");
+            }
 
+            Console.WriteLine(payload.ToString());
+
+            List<string>? topics = config.GetSection("mqttTopics").Get<List<string>>();
+
+            if(topics is null)
+                return;
+
+            string topic = topics[0];
+
+            await mqttClient.PublishMessage(topic, payload.ToString());
         }
     }
 }
