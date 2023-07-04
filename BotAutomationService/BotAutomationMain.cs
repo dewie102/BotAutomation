@@ -7,6 +7,10 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Configuration.Yaml;
 using System.Text;
 
+// Do I need these and can I do something without them? (Used in SendNoticeToBot)
+using MQTTnet;
+using MQTTnet.Packets;
+
 namespace BotAutomation
 {
     public class BotAutomationMain
@@ -109,8 +113,9 @@ namespace BotAutomation
                 while(dataReader.Read())
                 {
                     // I feel like I should be doing this part in the main function? Somehow returning all results back and deciding when to send...
+                    // MQTT Client can fail and causes it to exit out and run into this exception reporting database issues... NEED TO FIX (some day)
                     await SendNoticeToBot(dataReader["subject"].ToString(), dataReader["Message"].ToString(), dataReader["itemPath"].ToString());
-                    //await Task.Delay(5000);
+                    await Task.Delay(10000);
                 }
                 dataReader.Close();
                 command.Dispose();
@@ -159,8 +164,10 @@ namespace BotAutomation
             {
                 payload.Append($"{kp.Key}={kp.Value}&");
             }
+            // Removing the last '&' in the payload
+            payload.Length--;
 
-            Console.WriteLine(payload.ToString());
+            //Console.WriteLine(payload.ToString());
 
             List<string>? topics = config.GetSection("mqttTopics").Get<List<string>>();
 
@@ -169,7 +176,74 @@ namespace BotAutomation
 
             string topic = topics[0];
 
-            await mqttClient.PublishMessage(topic, payload.ToString());
+            await mqttClient.PublishMessage(topic, payload.ToString(), new MqttUserProperty("ID", "automation"));
+
+            await Task.Delay(1000);
+
+            while(mqttClient.ReceivedMessages.Count != 0)
+            {
+                MqttApplicationMessage receivedMessage = mqttClient.ReceivedMessages.Dequeue();
+
+                // Not working due to MQTT Version
+                /*if(ContinueToProcessMessage(receivedMessage))
+                {
+                    string result = ProcessMessage(receivedMessage);
+
+                    Console.WriteLine(result);
+                }*/
+
+                string result = ProcessMessage(receivedMessage);
+
+                if(result == "IGNORE")
+                    continue;
+
+                Console.WriteLine(result);
+            }
+        }
+
+        public static bool ContinueToProcessMessage(MqttApplicationMessage message)
+        {
+            if(message.UserProperties != null)
+            {
+                foreach(MqttUserProperty userProperty in message.UserProperties)
+                {
+                    if(userProperty.Name == "ID" && userProperty.Value == "automation")
+                        return false;
+                }
+            }
+
+            return true;
+        }
+
+        public static string ProcessMessage(MqttApplicationMessage message)
+        {
+            string payload = message.ConvertPayloadToString();
+            string[] payloadParameters = payload.Split("&");
+
+            Dictionary<string, string> parametersAndValues = new();
+
+            foreach(string parameter in payloadParameters)
+            {
+                string[] keyAndValue = parameter.Split("=");
+                parametersAndValues.Add(keyAndValue[0], keyAndValue[1]);
+            }
+
+            if(parametersAndValues.ContainsKey("command") && parametersAndValues["command"] == "notice")
+            {
+                if(parametersAndValues.ContainsKey("action"))
+                    return "IGNORE";
+
+                if(parametersAndValues.ContainsKey("success") && parametersAndValues["success"] == "True")
+                {
+                    return "Success";
+                }
+                else
+                {
+                    return parametersAndValues.ContainsKey("error") ? parametersAndValues["error"] : "Not successful, error or unprocessed message";
+                }
+            }
+
+            return "Unknown message and failed to process";
         }
     }
 }

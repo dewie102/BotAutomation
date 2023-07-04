@@ -3,6 +3,7 @@ using MQTTnet.Client;
 
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Configuration.Yaml;
+using MQTTnet.Packets;
 
 namespace AutomationUtilities
 {
@@ -10,13 +11,16 @@ namespace AutomationUtilities
     {
         public IMqttClient MqttClient { get; set; }
 
+        public Queue<MqttApplicationMessage> ReceivedMessages { get; set; }
+
         public MQTTClient()
         {
             MqttFactory mqttFactory = new();
             MqttClient = mqttFactory.CreateMqttClient();
+            ReceivedMessages = new();
         }
 
-        static async Task Main(string[] args)
+        /*static async Task Main(string[] args)
         {
             IConfigurationRoot config = new ConfigurationBuilder()
                 .SetBasePath(AppContext.BaseDirectory)
@@ -61,7 +65,7 @@ namespace AutomationUtilities
             }
 
             await client.DisconnectFromMQTTServer();
-        }
+        }*/
 
         public async Task ConnectToMQTTServer(string mqttServer)
         {
@@ -83,35 +87,43 @@ namespace AutomationUtilities
 
         public async Task SubscribeToTopic(string topic)
         {
-            MqttClient.ApplicationMessageReceivedAsync += e =>
-            {
-                Console.WriteLine("Received application message.");
-                e.DumpToConsole();
-                Console.WriteLine(e.ApplicationMessage);
+            MqttClient.ApplicationMessageReceivedAsync += RecieveMessage;
 
-                return Task.CompletedTask;
-            };
-
-            var response = await MqttClient.SubscribeAsync(topic);
+            var response = await MqttClient.SubscribeAsync(new MqttTopicFilterBuilder()
+                .WithTopic(topic)
+                .Build());
 
             response.DumpToConsole();
         }
 
-        public async Task PublishMessage(string topic, string message)
+        public async Task PublishMessage(string topic, string message, MqttUserProperty userProperty)
         {
             MqttApplicationMessage applicationMessage = new MqttApplicationMessageBuilder()
                 .WithTopic(topic)
                 .WithPayload(message)
+                // .WithUserProperty(userProperty.Name, userProperty.Value) Not currently supported until using MQTT 5.0.0
                 .Build();
 
             var response = await MqttClient.PublishAsync(applicationMessage);
-            response.DumpToConsole();
+            //Console.WriteLine("Response to publish message:");
+            //response.DumpToConsole();
         }
 
         public async Task DisconnectFromMQTTServer()
         {
             Console.WriteLine("Disconnecting from server...");
             await MqttClient.DisconnectAsync();
+        }
+
+        public Task RecieveMessage(MqttApplicationMessageReceivedEventArgs mqttEvent)
+        {
+            //Console.WriteLine("Received application message.");
+            //mqttEvent.DumpToConsole();
+            //Console.WriteLine(mqttEvent.ApplicationMessage);
+            //Console.WriteLine($"payload converted:\n{mqttEvent.ApplicationMessage.ConvertPayloadToString()}");
+            ReceivedMessages.Enqueue(mqttEvent.ApplicationMessage);
+
+            return Task.CompletedTask;
         }
     }
 }
