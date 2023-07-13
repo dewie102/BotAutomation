@@ -6,6 +6,8 @@ using Microsoft.Extensions.Configuration.Yaml;
 using MQTTnet.Packets;
 using MQTTnet.Server;
 
+using Serilog;
+
 namespace AutomationUtilities
 {
     public class MQTTClient
@@ -19,6 +21,7 @@ namespace AutomationUtilities
             MqttFactory mqttFactory = new();
             MqttClient = mqttFactory.CreateMqttClient();
             ReceivedMessages = new();
+            Log.Debug("MqttClient created: {@client}", this);
         }
 
         /*static async Task Main(string[] args)
@@ -83,6 +86,7 @@ namespace AutomationUtilities
                 await MqttClient.ConnectAsync(mqttClientOptions, timeout.Token);
 
                 Console.WriteLine("The MQTT Client is connected");
+                Log.Information("The MQTT Client is connected");
             }
         }
 

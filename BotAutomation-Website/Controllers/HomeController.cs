@@ -1,8 +1,7 @@
 ﻿using System.Diagnostics;
+using Microsoft.AspNetCore.Mvc;
 
 using BotAutomation_Website.Models;
-
-using Microsoft.AspNetCore.Mvc;
 
 namespace BotAutomation_Website.Controllers
 {

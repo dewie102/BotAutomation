@@ -1,15 +1,17 @@
 ﻿using System.Data.SqlClient;
-using Newtonsoft.Json;
-
-using AutomationUtilities.Models;
-using AutomationUtilities;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Configuration.Yaml;
 using System.Text;
+using Serilog;
+using Serilog.Events;
+using Serilog.Formatting.Json;
+
+using AutomationUtilities;
 
 // Do I need these and can I do something without them? (Used in SendNoticeToBot)
 using MQTTnet;
 using MQTTnet.Packets;
+
 
 namespace BotAutomation
 {
@@ -27,9 +29,9 @@ namespace BotAutomation
             if(config == null || mqttClient == null || !servicesInitialized)
                 return;
 
-            List<(string? subject, string? message, string? itemPath)>  noticesToSend = GetNoticesToSendFromDB();
+            List<(string? subject, string? message, string? itemPath)>?  noticesToSend = GetNoticesToSendFromDB();
 
-            if(noticesToSend.Count != 0)
+            if(noticesToSend != null && noticesToSend.Count != 0)
                 await SendNotices(noticesToSend);
 
             await mqttClient.DisconnectFromMQTTServer();
@@ -37,12 +39,34 @@ namespace BotAutomation
 
         public static async Task<bool> InitializeServices()
         {
+            SetupLogger();
+
             config = GetConfig();
 
             if(config == null)
                 return false;
 
             return await ConfigureMQTT();
+        }
+
+        public static void SetupLogger()
+        {
+            Log.Logger = new LoggerConfiguration()
+                            // Add console as logging target
+                            .WriteTo.Console()
+                            // Add a logging target for warning and higher logs
+                            // structrued in JSON format
+                            .WriteTo.File(new JsonFormatter(),
+                                            "Logs/important.json",
+                                            restrictedToMinimumLevel: LogEventLevel.Warning)
+                            // Add a rolling file for all logs
+                            .WriteTo.File("Logs/all-logs",
+                                            rollingInterval: RollingInterval.Day)
+                            // Add debug output window as logging target
+                            .WriteTo.Debug()
+                            // Set default minimum level
+                            .MinimumLevel.Debug()
+                            .CreateLogger();
         }
 
         public static IConfigurationRoot? GetConfig()
@@ -80,45 +104,52 @@ namespace BotAutomation
             }
             catch(Exception ex)
             {
-                Console.WriteLine($"An exception has occurred:\n{ex.Message}");
+                //Console.WriteLine($"An exception has occurred:\n{ex.Message}");
+                Log.Fatal($"An exception has occurred: {ex.Message}");
                 return false;
             }
 
             return true;
         }
 
-        public static List<(string? subject, string? message, string? itemPath)> GetNoticesToSendFromDB()
+        public static List<(string? subject, string? message, string? itemPath)>? GetNoticesToSendFromDB()
         {
             List<(string? subject, string? message, string? itemPath)> noticesToSend = new();
 
             if(config is null)
-                return noticesToSend;
+            {
+                Log.Error("Config is null while trying get get notices from the database");
+                return null;
+            }
 
             string? connectionString = config["servers:sql"];
 
             if(connectionString is null)
-                return noticesToSend;
+            {
+                Log.Fatal("Connection string was not found in the config file! exiting");
+                return null;
+            }
 
-            Console.WriteLine($"Connection String: {connectionString}");
+            //Console.WriteLine($"Connection String: {connectionString}");
+            Log.Debug($"Connection String: {connectionString}");
 
             // connectionString = "Server=(localdb)\\mssqllocaldb;Database=BotAutomation_Website.Data;Trusted_Connection=True;MultipleActiveResultSets=true";
             // connectionString = "Server=localhost\\SQLEXPRESS01;Database=BotAutomation_Website.Data;Trusted_Connection=True;MultipleActiveResultSets=true";
-            SqlDataReader dataReader;
             string sql = @"
                 SELECT *
                 FROM [BotAutomation_Website.Data].dbo.Notice
                 WHERE Sent = 0 AND
                 ScheduledTime >= DATEADD(DAY, -1, GETDATE()) AND
                 DATETRUNC(MINUTE, ScheduledTime) <= DATETRUNC(MINUTE, GETDATE());";
-            SqlCommand command;
             SqlConnection connection = new SqlConnection(connectionString);
             try
             {
                 connection.Open();
-                Console.WriteLine("Database Connection Open!");
+                //Console.WriteLine("Database Connection Open!");
+                Log.Information("Database Connection Open!");
 
-                command = new SqlCommand(sql, connection);
-                dataReader = command.ExecuteReader();
+                SqlCommand command = new(sql, connection);
+                SqlDataReader dataReader = command.ExecuteReader();
                 while(dataReader.Read())
                 {
                     noticesToSend.Add((dataReader["subject"].ToString(), dataReader["Message"].ToString(), dataReader["itemPath"].ToString()));
@@ -128,7 +159,8 @@ namespace BotAutomation
             }
             catch(Exception ex)
             {
-                Console.WriteLine($"Can not open database connection!\n{ex.Message}");
+                //Console.WriteLine($"Can not open database connection!\n{ex.Message}");
+                Log.Fatal($"Can not open database connection! {ex.Message}");
             }
             finally
             {
@@ -172,8 +204,6 @@ namespace BotAutomation
             if(!string.IsNullOrEmpty(itemPath))
                 test.Add("item", itemPath);
 
-            /*var json = JsonConvert.SerializeObject(test);
-            Console.WriteLine(json);*/
 
             StringBuilder payload = new();
             foreach(KeyValuePair<string, string> kp in test)
@@ -184,7 +214,6 @@ namespace BotAutomation
             payload.Length--;
 
             //Console.WriteLine(payload.ToString());
-
             List<string>? topics = config.GetSection("mqttTopics").Get<List<string>>();
 
             if(topics is null)
@@ -200,20 +229,13 @@ namespace BotAutomation
             {
                 MqttApplicationMessage receivedMessage = mqttClient.ReceivedMessages.Dequeue();
 
-                // Not working due to MQTT Version
-                /*if(ContinueToProcessMessage(receivedMessage))
-                {
-                    string result = ProcessMessage(receivedMessage);
-
-                    Console.WriteLine(result);
-                }*/
-
                 string result = ProcessMessage(receivedMessage);
 
                 if(result == "IGNORE")
                     continue;
 
-                Console.WriteLine(result);
+                //Console.WriteLine(result);
+                Log.Information(result);
             }
         }
 
