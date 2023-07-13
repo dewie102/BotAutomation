@@ -4,6 +4,7 @@ using MQTTnet.Client;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Configuration.Yaml;
 using MQTTnet.Packets;
+using MQTTnet.Server;
 
 namespace AutomationUtilities
 {

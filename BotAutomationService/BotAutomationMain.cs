@@ -22,24 +22,27 @@ namespace BotAutomation
         {
             //SendNoticeToBot("testSubject", "TestMessage", null);
 
-            await InitializeServices();
+            bool servicesInitialized = await InitializeServices();
 
-            if(config == null || mqttClient == null)
+            if(config == null || mqttClient == null || !servicesInitialized)
                 return;
 
-            await GetNoticesToSendFromDB();
+            List<(string? subject, string? message, string? itemPath)>  noticesToSend = GetNoticesToSendFromDB();
+
+            if(noticesToSend.Count != 0)
+                await SendNotices(noticesToSend);
 
             await mqttClient.DisconnectFromMQTTServer();
         }
 
-        public static async Task InitializeServices()
+        public static async Task<bool> InitializeServices()
         {
             config = GetConfig();
 
             if(config == null)
-                return;
+                return false;
 
-            await ConfigureMQTT();
+            return await ConfigureMQTT();
         }
 
         public static IConfigurationRoot? GetConfig()
@@ -60,40 +63,46 @@ namespace BotAutomation
                 return false;
 
             string? mqttServer = config["servers:mqtt"];
+            List<string>? topics = config.GetSection("mqttTopics").Get<List<string>>();
 
-            if(mqttServer is null)
+            if(mqttServer is null || topics is null)
                 return false;
 
             if(mqttClient is null)
                 mqttClient = new();
 
-            await mqttClient.ConnectToMQTTServer(mqttServer);
+            try
+            {
+                await mqttClient.ConnectToMQTTServer(mqttServer);
 
-            List<string>? topics = config.GetSection("mqttTopics").Get<List<string>>();
-
-            if(topics is null)
+                foreach(string topic in topics)
+                    await mqttClient.SubscribeToTopic(topic);
+            }
+            catch(Exception ex)
+            {
+                Console.WriteLine($"An exception has occurred:\n{ex.Message}");
                 return false;
-
-            foreach(string topic in topics)
-                await mqttClient.SubscribeToTopic(topic);
+            }
 
             return true;
         }
 
-        public static async Task GetNoticesToSendFromDB()
+        public static List<(string? subject, string? message, string? itemPath)> GetNoticesToSendFromDB()
         {
+            List<(string? subject, string? message, string? itemPath)> noticesToSend = new();
+
             if(config is null)
-                return;
+                return noticesToSend;
 
             string? connectionString = config["servers:sql"];
 
             if(connectionString is null)
-                return;
+                return noticesToSend;
 
             Console.WriteLine($"Connection String: {connectionString}");
 
-            //string connectionString = "Server=(localdb)\\mssqllocaldb;Database=BotAutomation_Website.Data;Trusted_Connection=True;MultipleActiveResultSets=true";
-            //string connectionString = "Server=localhost\\SQLEXPRESS01;Database=BotAutomation_Website.Data;Trusted_Connection=True;MultipleActiveResultSets=true";
+            // connectionString = "Server=(localdb)\\mssqllocaldb;Database=BotAutomation_Website.Data;Trusted_Connection=True;MultipleActiveResultSets=true";
+            // connectionString = "Server=localhost\\SQLEXPRESS01;Database=BotAutomation_Website.Data;Trusted_Connection=True;MultipleActiveResultSets=true";
             SqlDataReader dataReader;
             string sql = @"
                 SELECT *
@@ -112,10 +121,7 @@ namespace BotAutomation
                 dataReader = command.ExecuteReader();
                 while(dataReader.Read())
                 {
-                    // I feel like I should be doing this part in the main function? Somehow returning all results back and deciding when to send...
-                    // MQTT Client can fail and causes it to exit out and run into this exception reporting database issues... NEED TO FIX (some day)
-                    await SendNoticeToBot(dataReader["subject"].ToString(), dataReader["Message"].ToString(), dataReader["itemPath"].ToString());
-                    await Task.Delay(10000);
+                    noticesToSend.Add((dataReader["subject"].ToString(), dataReader["Message"].ToString(), dataReader["itemPath"].ToString()));
                 }
                 dataReader.Close();
                 command.Dispose();
@@ -127,6 +133,16 @@ namespace BotAutomation
             finally
             {
                 connection.Close();
+            }
+
+            return noticesToSend;
+        }
+
+        public static async Task SendNotices(List<(string? subject, string? message, string? itemPath)> noticesToSend)
+        {
+            foreach((string? subject, string? message, string? itemPath) notice in noticesToSend)
+            {
+                await SendNoticeToBot(notice.subject, notice.message, notice.itemPath);
             }
         }
 

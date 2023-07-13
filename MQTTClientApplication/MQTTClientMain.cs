@@ -70,9 +70,16 @@ namespace MQTTClientApplication
 
             using(CancellationTokenSource timeout = new(5000))
             {
-                await mqttClient.ConnectAsync(mqttClientOptions, timeout.Token);
+                try
+                {
+                    await mqttClient.ConnectAsync(mqttClientOptions, timeout.Token);
 
-                Console.WriteLine("The MQTT Client is connected");
+                    Console.WriteLine("The MQTT Client is connected");
+                }
+                catch(Exception ex)
+                {
+                    Console.WriteLine($"Failed to connect to MQTT Broker for the following reason:\n{ex.Message}");
+                }
             }
         }
 
