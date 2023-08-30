@@ -26,36 +26,14 @@ namespace VaultClientApplication
             if(vaultServer is null)
                 return;
 
-            var client = new HttpClient();
-            client.BaseAddress = new Uri($"http://{vaultServer}/v1/auth/approle/role/extrabot_automation/secret-id");
-            HttpResponseMessage response = await client.PostAsync(client.BaseAddress, null);
-            HttpContent responseContent = response.Content;
-
-            JObject responseAsJson = JObject.Parse(await responseContent.ReadAsStringAsync());
-            if(responseContent is null)
-                return;
-
-            JToken? responseData = responseAsJson.GetValue("data");
-            if(responseData is null)
-                return;
-
-            JToken? secretIDToken = responseData["secret_id"];
-            if(secretIDToken is null)
-                return;
-
-            string secretID = secretIDToken.ToString();
+            VaultClientWrapper vault = new VaultClientWrapper(vaultServer);
+            string secretID = await vault.GetSecretID();
 
             string? roleID = config["roleID"];
             if(roleID is null)
                 return;
 
-            IAuthMethodInfo authMethod = new AppRoleAuthMethodInfo(roleID, secretID);
-            VaultClientSettings vaultClientSettings = new VaultClientSettings($"http://{vaultServer}", authMethod);
-            IVaultClient vaultClient = new VaultClient(vaultClientSettings);
-
-            vaultClient.Settings.UseVaultTokenHeaderInsteadOfAuthorizationHeader = true;
-
-            Secret<StaticCredentials> creds = await vaultClient.V1.Secrets.Database.GetStaticCredentialsAsync("ExtrabotAutomation");
+            Secret<StaticCredentials> creds = await vault.getStaticCredentials("ExtrabotAutomation", roleID, secretID);
 
             Console.WriteLine(creds.Data.Username);
             Console.WriteLine(creds.Data.Password);
