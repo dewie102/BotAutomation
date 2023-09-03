@@ -15,21 +15,21 @@ using Newtonsoft.Json.Linq;
 namespace VaultClientApplication
 {
     internal class VaultClientWrapper {
-        public string VaultServer { get; set; }
-        private Uri? VaultSecretIDUri { get; set; } = null;
+        private static string SECRET_ID_URI_PATH = "/v1/auth/approle/role/extrabot_automation/secret-id";
+
+        public string VaultServerHostAndPort { get; set; }
         private IVaultClient? VaultClient { get; set; } = null;
 
 
-        public VaultClientWrapper(string vaultServer) {
-            this.VaultServer = vaultServer;
-            SetSecretIDUri();
+        public VaultClientWrapper(string vaultServerHostAndPort) {
+            this.VaultServerHostAndPort = vaultServerHostAndPort;
         }
 
-        public async Task<string> GetSecretID() {
+        public async Task<string> GetSecretIDFromVault() {
             string result = "";
 
             HttpClient client = new HttpClient();
-            client.BaseAddress = VaultSecretIDUri;
+            client.BaseAddress = GetSecretIDUri();
             HttpResponseMessage response = await client.PostAsync(client.BaseAddress, null);
             HttpContent responseContent = response.Content;
 
@@ -64,6 +64,10 @@ namespace VaultClientApplication
         public async Task<Secret<StaticCredentials>> getStaticCredentials(string roleName, string roleID, string secretID) {
             SetVaultClientWithAppRole(roleID, secretID);
 
+            if(VaultClient == null)  {
+                throw new ArgumentNullException(nameof(VaultClient));
+            }
+
             Secret<StaticCredentials> creds = await VaultClient.V1.Secrets.Database.GetStaticCredentialsAsync(roleName);
 
             return creds;
@@ -71,16 +75,30 @@ namespace VaultClientApplication
 
         private void SetVaultClientWithAppRole(string roleID, string secretID) {
             IAuthMethodInfo authMethod = new AppRoleAuthMethodInfo(roleID, secretID);
-            VaultClientSettings vaultClientSettings = new VaultClientSettings($"http://{VaultSecretIDUri.GetComponents(UriComponents.HostAndPort, UriFormat.Unescaped)}", authMethod);
+            VaultClientSettings vaultClientSettings = new VaultClientSettings(
+                $"http://{VaultServerHostAndPort}", authMethod);
             VaultClient = new VaultClient(vaultClientSettings);
 
             VaultClient.Settings.UseVaultTokenHeaderInsteadOfAuthorizationHeader = true;
         }
 
-        private void SetSecretIDUri()
+        private Uri GetSecretIDUri()
         {
-            VaultSecretIDUri = new Uri(
-                $"http://{VaultServer}/v1/auth/approle/role/extrabot_automation/secret-id");
+            string[] hostAndPort = VaultServerHostAndPort.Split(':');
+            string host = hostAndPort[0];
+            int port = -1;
+            bool succeeded = int.TryParse(hostAndPort[1], out port);
+
+            if(!succeeded)
+                throw new FormatException($"Value after host is not a valid int: {hostAndPort[1]}");
+
+            UriBuilder builder = new UriBuilder();
+            builder.Host = host;
+            builder.Port = port;
+            builder.Path = SECRET_ID_URI_PATH;
+            builder.Scheme = "http";
+
+            return builder.Uri;
         }
     }
 }

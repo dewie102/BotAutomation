@@ -1,12 +1,8 @@
-﻿using VaultSharp;
-using VaultSharp.V1.AuthMethods;
-using VaultSharp.V1.AuthMethods.AppRole;
-using VaultSharp.V1.Commons;
+﻿using VaultSharp.V1.Commons;
 using VaultSharp.V1.SecretsEngines.Database;
 
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Configuration.Yaml;
-using Newtonsoft.Json.Linq;
 
 namespace VaultClientApplication
 {
@@ -22,12 +18,12 @@ namespace VaultClientApplication
             if(config is null)
                 return;
 
-            string? vaultServer = config["servers:vault"];
-            if(vaultServer is null)
+            string? vaultServerHostAndPort = config["servers:vault"];
+            if(vaultServerHostAndPort is null)
                 return;
 
-            VaultClientWrapper vault = new VaultClientWrapper(vaultServer);
-            string secretID = await vault.GetSecretID();
+            VaultClientWrapper vault = new VaultClientWrapper(vaultServerHostAndPort);
+            string secretID = await vault.GetSecretIDFromVault();
 
             string? roleID = config["roleID"];
             if(roleID is null)
