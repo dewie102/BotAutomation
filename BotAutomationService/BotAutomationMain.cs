@@ -5,6 +5,8 @@ using System.Text;
 using Serilog;
 using Serilog.Events;
 using Serilog.Formatting.Json;
+using VaultSharp.V1.Commons;
+using VaultSharp.V1.SecretsEngines.Database;
 
 using AutomationUtilities;
 
@@ -129,6 +131,19 @@ namespace BotAutomation
                 Log.Fatal("Connection string was not found in the config file! exiting");
                 return null;
             }
+
+            Secret<StaticCredentials>? credentials = VaultClientWrapper.GetDBCredentials(config).Result;
+            if(credentials is null)
+            {
+                Log.Fatal("Could not fetch credentials from vault, exiting...");
+                return null;
+            }
+
+            StringBuilder conString = new(connectionString);
+            conString.Append($";user={credentials.Data.Username}");
+            conString.Append($";password={credentials.Data.Password}");
+
+            connectionString = conString.ToString();
 
             //Console.WriteLine($"Connection String: {connectionString}");
             Log.Debug($"Connection String: {connectionString}");

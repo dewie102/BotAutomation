@@ -3,6 +3,10 @@ using Microsoft.Extensions.DependencyInjection;
 using BotAutomation_Website.Data;
 using Microsoft.Extensions.Configuration.Yaml;
 using Serilog;
+using VaultSharp.V1.Commons;
+using VaultSharp.V1.SecretsEngines.Database;
+using AutomationUtilities;
+using System.Text;
 
 namespace BotAutomation_Website
 {
@@ -23,6 +27,19 @@ namespace BotAutomation_Website
                 Log.Fatal("Could not find sutible database connection string, exiting...");
                 return;
             }
+
+            Secret<StaticCredentials>? credentials = VaultClientWrapper.GetDBCredentials(config).Result;
+            if(credentials is null)
+            {
+                Log.Fatal("Could not fetch credentials from vault, exiting...");
+                return;
+            }
+            
+            StringBuilder conString = new(dbConnectionString);
+            conString.Append($";user={credentials.Data.Username}");
+            conString.Append($";password={credentials.Data.Password}");
+
+            dbConnectionString = conString.ToString();
 
             builder.Services.AddDbContext<BotAutomation_WebsiteContext>(options =>
                 options.UseSqlServer(dbConnectionString));
