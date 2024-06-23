@@ -364,3 +364,4 @@ FodyWeavers.xsd
 
 # Config file DO NOT INCLUDE!!!
 config.yml
+.env

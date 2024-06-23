@@ -5,8 +5,7 @@ using System.Text;
 using Serilog;
 using Serilog.Events;
 using Serilog.Formatting.Json;
-using VaultSharp.V1.Commons;
-using VaultSharp.V1.SecretsEngines.Database;
+using dotenv.net;
 
 using AutomationUtilities;
 
@@ -25,6 +24,7 @@ namespace BotAutomation
         static async Task Main(string[] args)
         {
             //SendNoticeToBot("testSubject", "TestMessage", null);
+            DotEnv.Load();
 
             bool servicesInitialized = await InitializeServices();
 
@@ -73,11 +73,10 @@ namespace BotAutomation
 
         public static IConfigurationRoot? GetConfig()
         {
-            // Make config from yml secondary to the secrets vault... someday
-
             IConfigurationRoot config = new ConfigurationBuilder()
                 .SetBasePath(AppContext.BaseDirectory)
                 .AddYamlFile("config.yml")
+                .AddEnvironmentVariables()
                 .Build();
 
             return config;
@@ -132,16 +131,19 @@ namespace BotAutomation
                 return null;
             }
 
-            Secret<StaticCredentials>? credentials = VaultClientWrapper.GetDBCredentials(config).Result;
-            if(credentials is null)
+            // Store credentials in .env or config file and pull them here
+            string? username = config["MSSQL_USERNAME"];
+            string? password = config["MSSQL_PASSWORD"];
+
+            if(username == null || password == null)
             {
-                Log.Fatal("Could not fetch credentials from vault, exiting...");
+                Log.Fatal("Missing Username or Password from .env file");
                 return null;
             }
 
             StringBuilder conString = new(connectionString);
-            conString.Append($";user={credentials.Data.Username}");
-            conString.Append($";password={credentials.Data.Password}");
+            conString.Append($";user={username}");
+            conString.Append($";password={password}");
 
             connectionString = conString.ToString();
 

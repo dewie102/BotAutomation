@@ -1,12 +1,9 @@
 ﻿using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
 using BotAutomation_Website.Data;
 using Microsoft.Extensions.Configuration.Yaml;
 using Serilog;
-using VaultSharp.V1.Commons;
-using VaultSharp.V1.SecretsEngines.Database;
-using AutomationUtilities;
 using System.Text;
+using dotenv.net;
 
 namespace BotAutomation_Website
 {
@@ -14,9 +11,12 @@ namespace BotAutomation_Website
     {
         public static void Main(string[] args)
         {
+            DotEnv.Load();
+
             IConfigurationRoot config = new ConfigurationBuilder()
                 .SetBasePath(AppContext.BaseDirectory)
                 .AddYamlFile("config.yml")
+                .AddEnvironmentVariables()
                 .Build();
 
             var builder = WebApplication.CreateBuilder(args);
@@ -28,16 +28,19 @@ namespace BotAutomation_Website
                 return;
             }
 
-            Secret<StaticCredentials>? credentials = VaultClientWrapper.GetDBCredentials(config).Result;
-            if(credentials is null)
+            // Store credentials in .env or config file and pull them here
+            string? username = config["MSSQL_USERNAME"];
+            string? password = config["MSSQL_PASSWORD"];
+
+            if(username == null || password == null)
             {
-                Log.Fatal("Could not fetch credentials from vault, exiting...");
+                Log.Fatal("Missing Username or Password from .env file");
                 return;
             }
-            
+
             StringBuilder conString = new(dbConnectionString);
-            conString.Append($";user={credentials.Data.Username}");
-            conString.Append($";password={credentials.Data.Password}");
+            conString.Append($";user={username}");
+            conString.Append($";password={password}");
 
             dbConnectionString = conString.ToString();
 
